@@ -1,0 +1,20 @@
+# Simulation settings
+SIMULATION_TIME = 60
+SIMULATION_SPEED = 1.0
+
+# Sensor settings
+DEFAULT_SENSOR_INTERVAL = 2
+
+# Network settings
+BASE_DELAY = 0.05
+DELAY_VARIATION = 0.01
+
+# Packet loss
+PACKET_LOSS_PROBABILITY = 0.10
+
+# Gateway settings
+GATEWAY_PROCESSING_TIME = 0.02
+GATEWAY_QUEUE_LIMIT = 20
+
+# Network addressing
+NETWORK_PREFIX = "192.168.1."
