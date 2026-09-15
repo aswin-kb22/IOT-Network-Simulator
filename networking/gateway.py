@@ -20,3 +20,9 @@ class Gateway:
 
     def get_queue_size(self):
         ...
+
+    def is_available(self):
+        ...
+
+    def clear_queue(self):
+        ...

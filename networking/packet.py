@@ -14,3 +14,6 @@ class Packet:
 
     def get_info(self):
         ...
+
+    def set_timestamp(self,event):
+        ...

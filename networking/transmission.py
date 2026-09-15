@@ -11,3 +11,6 @@ class Transmission:
 
     def get_transmission_time(self):
         ...
+
+    def get_delivery_time(self,start_time):
+        ...
