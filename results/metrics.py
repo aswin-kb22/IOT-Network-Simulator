@@ -32,3 +32,9 @@ class Metrics:
 
     def get_summary(self):
         ...
+
+    def record_event(self,event):
+        ...
+
+    def reset(self):
+        ...
