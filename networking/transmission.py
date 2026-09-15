@@ -1,0 +1,13 @@
+class Transmission:
+
+    def __init__(self, base_delay, delay_variation):
+        ...
+
+    def calculate_delay(self):
+        ...
+
+    def transmit(self, packet, source, destination):
+        ...
+
+    def get_transmission_time(self):
+        ...
