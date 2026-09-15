@@ -35,3 +35,6 @@ class Dashboard:
 
     def run(self):
         ...
+
+    def refresh(self):
+        ...
