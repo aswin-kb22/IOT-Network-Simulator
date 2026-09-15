@@ -1,0 +1,13 @@
+class PacketLoss:
+
+    def __init__(self, loss_probability):
+        ...
+
+    def is_packet_lost(self):
+        ...
+
+    def apply_loss(self, packet):
+        ...
+
+    def get_loss_probability(self):
+        ...

@@ -1,0 +1,19 @@
+class Packet:
+
+    def __init__(self, packet_id, source, destination, data):
+        ...
+
+    def update_status(self, status):
+        ...
+
+    def add_timestamp(self, event, timestamp):
+        ...
+
+    def get_status(self):
+        ...
+
+    def get_info(self):
+        ...
+
+    def set_timestamp(self,event):
+        ...

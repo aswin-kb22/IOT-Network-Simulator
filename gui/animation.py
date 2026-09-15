@@ -1,0 +1,19 @@
+class PacketAnimation:
+
+    def __init__(self, canvas):
+        ...
+
+    def animate_packet(self, packet, source, destination):
+        ...
+
+    def update_packet_position(self, packet_id, position):
+        ...
+
+    def show_packet_status(self, packet_id, status):
+        ...
+
+    def remove_packet(self, packet_id):
+        ...
+
+    def clear_animations(self):
+        ...

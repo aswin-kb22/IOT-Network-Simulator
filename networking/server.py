@@ -1,0 +1,19 @@
+class Server:
+
+    def __init__(self, device_id, ip_address):
+        ...
+
+    def receive(self, packet):
+        ...
+
+    def process_packet(self, packet):
+        ...
+
+    def store_packet(self, packet):
+        ...
+
+    def get_received_packets(self):
+        ...
+
+    def get_packet_count(self):
+        ...
