@@ -3,13 +3,13 @@ class Sensor:
         self.device_id = device_id
         self.sensor_type = sensor_type
         self.interval = interval
-        self.status = "inactive"
+        self.status = "ACTIVE"
 
     def activate(self):
-        self.status = "active"
+        self.status = "ACTIVE"
 
     def deactivate(self):
-        self.status = "inactive"
+        self.status = "INACTIVE"
 
     def set_interval(self, interval):
         if interval <= 0:
@@ -57,3 +57,34 @@ class SensorManager:
 
     def get_all_sensors(self):
         return self.sensors
+
+if __name__ == "__main__":
+
+    sensor = Sensor(
+        "S-01",
+        "temperature",
+        2
+    )
+
+    print("Sensor created")
+    print("ID:", sensor.device_id)
+    print("Type:", sensor.sensor_type)
+    print("Interval:", sensor.interval)
+    print("Status:", sensor.get_status())
+
+    sensor.deactivate()
+
+    print("\nAfter deactivation:")
+    print("Status:", sensor.get_status())
+
+    sensor.activate()
+
+    print("\nAfter activation:")
+    print("Status:", sensor.get_status())
+
+    sensor.set_sensor_type("humidity")
+    sensor.set_interval(5)
+
+    print("\nAfter configuration:")
+    print("Type:", sensor.sensor_type)
+    print("Interval:", sensor.interval)

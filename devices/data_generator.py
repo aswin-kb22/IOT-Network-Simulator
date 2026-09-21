@@ -146,3 +146,39 @@ class DataGenerator:
             raise ValueError(
                 f"Unsupported sensor type: {sensor_type}"
             )
+
+if __name__ == "__main__":
+
+    generator = DataGenerator()
+
+    print("Temperature:",
+          generator.generate_temperature())
+
+    print("Humidity:",
+          generator.generate_humidity())
+
+    print("Light:",
+          generator.generate_light())
+
+    print("Motion:",
+          generator.generate_motion())
+
+    print("Soil Moisture:",
+          generator.generate_soil_moisture())
+
+    print("\nGeneric readings:")
+
+    print(
+        "Temperature:",
+        generator.generate_reading("temperature")
+    )
+
+    print(
+        "Humidity:",
+        generator.generate_reading("humidity")
+    )
+
+    print(
+        "Light:",
+        generator.generate_reading("light")
+    )

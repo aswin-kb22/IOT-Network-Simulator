@@ -1,6 +1,6 @@
 import random
 import time
-
+from networking.packet import Packet
 
 class Transmission:
 
@@ -82,3 +82,39 @@ class Transmission:
         """
 
         return start_time + self.last_transmission_time
+
+if __name__ == "__main__":
+
+    transmission = Transmission(
+        0.05,
+        0.01
+    )
+
+    print("Testing transmission delay...\n")
+
+    for i in range(5):
+
+        delay = transmission.calculate_delay()
+
+        print(
+            f"Transmission {i + 1}: "
+            f"{delay:.4f} seconds"
+        )
+
+    packet = Packet(
+        "P-01",
+        "S-01",
+        "GW-01",
+        {"temperature": 26.5}
+    )
+
+    delay = transmission.transmit(
+        packet,
+        "S-01",
+        "GW-01"
+    )
+
+    print("\nPacket transmission:")
+    print("Delay:", delay)
+    print("Status:", packet.get_status())
+    print("Packet:", packet.get_info())

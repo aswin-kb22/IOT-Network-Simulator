@@ -31,3 +31,30 @@ class Packet:
     def set_timestamp(self, event):
         import time
         self.timestamps[event] = time.time()
+
+if __name__ == "__main__":
+
+    packet = Packet(
+        "P-01",
+        "S-01",
+        "GW-01",
+        {"temperature": 26.5}
+    )
+
+    print("Packet created:")
+    print(packet.get_info())
+
+    packet.set_timestamp("CREATED")
+
+    print("\nAfter timestamp:")
+    print(packet.get_info())
+
+    packet.update_status("TRANSMITTING")
+
+    print("\nAfter status update:")
+    print(packet.get_info())
+
+    packet.update_status("DELIVERED")
+
+    print("\nFinal packet:")
+    print(packet.get_info())

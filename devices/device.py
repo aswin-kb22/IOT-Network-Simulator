@@ -31,3 +31,26 @@ class Device:
             "device_type": self.device_type,
             "status": self.status
         }
+
+if __name__ == "__main__":
+
+    device = Device(
+        "D-01",
+        "192.168.1.10",
+        "SENSOR"
+    )
+
+    print("Device ID:", device.get_device_id())
+    print("IP Address:", device.get_ip())
+    print("Status:", device.get_status())
+    print("Info:", device.get_info())
+
+    device.deactivate()
+
+    print("\nAfter deactivation:")
+    print("Status:", device.get_status())
+
+    device.activate()
+
+    print("\nAfter activation:")
+    print("Status:", device.get_status())

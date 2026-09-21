@@ -18,3 +18,15 @@ GATEWAY_QUEUE_LIMIT = 20
 
 # Network addressing
 NETWORK_PREFIX = "192.168.1."
+
+if __name__ == "__main__":
+
+    print("Simulation Time:", SIMULATION_TIME)
+    print("Simulation Speed:", SIMULATION_SPEED)
+    print("Sensor Interval:", DEFAULT_SENSOR_INTERVAL)
+    print("Base Delay:", BASE_DELAY)
+    print("Delay Variation:", DELAY_VARIATION)
+    print("Packet Loss Probability:", PACKET_LOSS_PROBABILITY)
+    print("Gateway Processing Time:", GATEWAY_PROCESSING_TIME)
+    print("Gateway Queue Limit:", GATEWAY_QUEUE_LIMIT)
+    print("Network Prefix:", NETWORK_PREFIX)
