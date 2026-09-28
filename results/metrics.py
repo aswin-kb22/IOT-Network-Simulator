@@ -1,14 +1,13 @@
 import time
 
-
 class Metrics:
-
     def __init__(self):
         self.packets_generated = 0
         self.packets_forwarded = 0
         self.packets_delivered = 0
         self.packets_lost = 0
 
+        self.simulation_time = 0
         self.delays = []
         self.queue_pressures = []
         self.events = []
@@ -132,6 +131,7 @@ class Metrics:
         self.packets_forwarded = 0
         self.packets_delivered = 0
         self.packets_lost = 0
+        self.simulation_time = 0
 
         self.delays.clear()
         self.queue_pressures.clear()
