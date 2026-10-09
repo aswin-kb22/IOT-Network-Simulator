@@ -2,9 +2,14 @@ import random
 
 
 class PacketLoss:
-
     def __init__(self, loss_probability):
-        self.loss_probability = loss_probability
+        self.set_loss_probability(loss_probability)
+
+    def set_loss_probability(self, probability):
+        probability = float(probability)
+        if not 0.0 <= probability <= 1.0:
+            raise ValueError("Loss probability must be between 0 and 1.")
+        self.loss_probability = probability
 
     def is_packet_lost(self):
         return random.random() < self.loss_probability
@@ -17,25 +22,3 @@ class PacketLoss:
 
     def get_loss_probability(self):
         return self.loss_probability
-
-if __name__ == "__main__":
-
-    packet_loss = PacketLoss(0.5)
-
-    print("Packet loss probability:",
-          packet_loss.get_loss_probability())
-
-    print("\nTesting 20 packets:\n")
-
-    lost = 0
-
-    for i in range(20):
-
-        if packet_loss.is_packet_lost():
-            print(f"Packet {i + 1}: LOST")
-            lost += 1
-        else:
-            print(f"Packet {i + 1}: DELIVERED")
-
-    print("\nTotal lost:", lost)
-    print("Total tested:", 20)
