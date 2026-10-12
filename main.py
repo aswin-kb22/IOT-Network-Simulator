@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from config.config import *
 
 from devices.sensor import Sensor, SensorManager
@@ -8,6 +10,7 @@ from networking.transmission import Transmission
 from networking.packet_loss import PacketLoss
 from networking.gateway import Gateway
 from networking.server import Server
+
 from gui.dashboard import Dashboard
 
 from results.metrics import Metrics
@@ -17,18 +20,20 @@ class IoTNetworkSimulator:
 
     def __init__(self):
 
-        # -----------------------------------------------------
+        # =====================================================
         # Simulation state
-        # -----------------------------------------------------
+        # =====================================================
 
         self.running = False
         self.simulation_time = 0
+        self.simulation_speed = 1.0
 
-        # -----------------------------------------------------
+        # =====================================================
         # Managers / modules
-        # -----------------------------------------------------
+        # =====================================================
 
         self.sensor_manager = SensorManager()
+
         self.data_generator = DataGenerator()
 
         self.transmission = Transmission(
@@ -40,31 +45,33 @@ class IoTNetworkSimulator:
             PACKET_LOSS_PROBABILITY
         )
 
+        self.gateway_queue_limit = GATEWAY_QUEUE_LIMIT
+
         self.metrics = Metrics()
 
-        # GUI will be connected later
+        # Dashboard will be connected in main()
         self.dashboard = None
 
-        # -----------------------------------------------------
+        # =====================================================
         # Network devices
-        # -----------------------------------------------------
+        # =====================================================
 
         self.gateway = None
         self.server = None
 
-        # -----------------------------------------------------
+        # =====================================================
         # Packet tracking
-        # -----------------------------------------------------
+        # =====================================================
 
         self.packet_counter = 0
 
-        # Packets whose delivery has already
-        # been recorded by Metrics
+        # Packets whose delivery has already been
+        # recorded by Metrics
         self.processed_deliveries = set()
 
-        # -----------------------------------------------------
+        # =====================================================
         # Initialize simulation
-        # -----------------------------------------------------
+        # =====================================================
 
         self.initialize()
 
@@ -75,7 +82,7 @@ class IoTNetworkSimulator:
     def initialize(self):
 
         self.create_devices()
-        self.create_sensors()
+        # self.create_sensors()
 
     # =========================================================
     # CREATE NETWORK DEVICES
@@ -85,7 +92,8 @@ class IoTNetworkSimulator:
 
         self.gateway = Gateway(
             "GW-01",
-            NETWORK_PREFIX + "1"
+            NETWORK_PREFIX + "1",
+            queue_limit=self.gateway_queue_limit
         )
 
         self.server = Server(
@@ -93,9 +101,132 @@ class IoTNetworkSimulator:
             NETWORK_PREFIX + "100"
         )
 
+        # Connect gateway to server
         self.gateway.set_server(
             self.server
         )
+
+
+    def apply_network_conditions(self, loss_percent, base_delay_ms, variation_ms, queue_limit):
+        """Apply live network settings from the dashboard."""
+        loss_percent = float(loss_percent)
+        base_delay_ms = float(base_delay_ms)
+        variation_ms = float(variation_ms)
+        queue_limit = int(queue_limit)
+        if not 0 <= loss_percent <= 100:
+            raise ValueError("Packet loss must be between 0 and 100%.")
+        if base_delay_ms < 0 or variation_ms < 0:
+            raise ValueError("Delay values cannot be negative.")
+        if queue_limit < 1:
+            raise ValueError("Queue limit must be at least 1.")
+        self.packet_loss.set_loss_probability(loss_percent / 100.0)
+        self.transmission.set_parameters(base_delay_ms / 1000.0, variation_ms / 1000.0)
+        self.gateway_queue_limit = queue_limit
+        if self.gateway is not None:
+            self.gateway.set_queue_limit(queue_limit)
+        if self.dashboard is not None:
+            self.dashboard.update_activity({"event": f"Network settings updated: loss={loss_percent:g}%, delay={base_delay_ms:g}±{variation_ms:g} ms, queue={queue_limit}"})
+
+    def add_sensor(self, sensor_type, interval=2):
+        """Create and register a new sensor dynamically."""
+
+        sensor_type = sensor_type.strip().lower()
+
+        valid_types = {
+            "temperature",
+            "humidity",
+            "light",
+            "motion",
+            "soil_moisture"
+        }
+
+        if sensor_type not in valid_types:
+            raise ValueError("Unsupported sensor type.")
+
+        if interval <= 0:
+            raise ValueError("Sampling interval must be positive.")
+
+        sensors = self.sensor_manager.get_all_sensors()
+
+        # Generate the next available sensor ID.
+        existing_ids = {sensor.device_id for sensor in sensors}
+
+        number = 1
+        while f"S-{number:02d}" in existing_ids:
+            number += 1
+
+        device_id = f"S-{number:02d}"
+
+        # Assign an IP address based on the sensor number.
+        ip_address = f"{NETWORK_PREFIX}{number + 10}"
+
+        sensor = Sensor(
+            device_id,
+            sensor_type,
+            interval
+        )
+
+        sensor.activate()
+
+        self.sensor_manager.add_sensor(sensor)
+
+        # Update the dashboard topology immediately.
+        if self.dashboard is not None:
+            if getattr(self.dashboard, "topology", None) is not None:
+                self.dashboard.topology.add_sensor_node(sensor)
+                self.dashboard.topology.connect_nodes(
+                    sensor.device_id,
+                    self.gateway.device_id
+                )
+
+        print(f"Added sensor {device_id} ({sensor_type})")
+
+        return sensor
+
+
+    def remove_sensor(self, device_id):
+        """Remove a sensor from the simulator."""
+
+        sensor = self.sensor_manager.get_sensor(device_id)
+
+        if sensor is None:
+            return False
+
+        self.sensor_manager.remove_sensor(device_id)
+
+        if self.dashboard is not None:
+            if getattr(self.dashboard, "topology", None) is not None:
+                self.dashboard.topology.remove_node(device_id)
+
+        print(f"Removed sensor {device_id}")
+
+        return True
+
+
+    def _log_packet_event(self, packet, source, destination, event):
+        """Add a timestamped packet event to the dashboard activity panel."""
+        if self.dashboard is None:
+            return
+
+        dashboard_logger = getattr(self.dashboard, "update_activity", None)
+        if not callable(dashboard_logger):
+            return
+
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        message = f"{timestamp}  {packet.packet_id}  {source} -> {destination}  {event}"
+        try:
+            dashboard_logger(message)
+        except Exception as error:
+            print(f"Activity log update error ({event}): {error}")
+
+    def _record_link_event(self, source, destination, event):
+        """Update a topology link counter when the dashboard is available."""
+        topology = getattr(self.dashboard, "topology", None) if self.dashboard else None
+        if topology is not None:
+            try:
+                topology.record_connection_event(source, destination, event)
+            except Exception as error:
+                print(f"Connection counter update error ({event}): {error}")
 
     # =========================================================
     # CREATE SENSORS
@@ -122,13 +253,11 @@ class IoTNetworkSimulator:
         )
 
         # Activate sensors
-
         sensor1.activate()
         sensor2.activate()
         sensor3.activate()
 
         # Add sensors to manager
-
         self.sensor_manager.add_sensor(
             sensor1
         )
@@ -147,9 +276,14 @@ class IoTNetworkSimulator:
 
     def start_simulation(self):
 
+        if self.running:
+            return
+
         self.running = True
 
-        print("Simulation started.")
+        print(
+            "Simulation started."
+        )
 
         self.update_simulation()
 
@@ -161,7 +295,9 @@ class IoTNetworkSimulator:
 
         self.running = False
 
-        print("Simulation paused.")
+        print(
+            "Simulation paused."
+        )
 
     # =========================================================
     # RESET SIMULATION
@@ -171,23 +307,46 @@ class IoTNetworkSimulator:
 
         self.running = False
 
+        # Reset simulation time
         self.simulation_time = 0
 
+        # Reset packet counter
         self.packet_counter = 0
 
+        # Clear delivery tracking
         self.processed_deliveries.clear()
 
         # Reset metrics
-
         self.metrics.reset()
 
-        # Recreate sensors
+        # Clear dashboard animations
+        if self.dashboard is not None:
 
+            try:
+
+                if self.dashboard.animation is not None:
+
+                    self.dashboard.animation.clear_animations()
+
+            except Exception as error:
+
+                print(
+                    "Animation reset error:",
+                    error
+                )
+
+        # Recreate sensors
         self.sensor_manager = SensorManager()
+
+        # Recreate complete network
+        self.gateway = None
+        self.server = None
 
         self.initialize()
 
-        print("Simulation reset.")
+        print(
+            "Simulation reset."
+        )
 
     # =========================================================
     # UPDATE SIMULATION
@@ -198,23 +357,37 @@ class IoTNetworkSimulator:
         if not self.running:
             return
 
+        # -----------------------------------------------------
         # Advance simulation time
+        # -----------------------------------------------------
 
         self.simulation_time += 1
-
-        # Keep Metrics synchronized
 
         self.metrics.simulation_time = (
             self.simulation_time
         )
 
-        # Process simulation
+        # -----------------------------------------------------
+        # Process sensors
+        # -----------------------------------------------------
 
         self.process_sensor_events()
 
+        # -----------------------------------------------------
+        # Process network
+        # -----------------------------------------------------
+
         self.process_network()
 
+        # -----------------------------------------------------
+        # Update metrics
+        # -----------------------------------------------------
+
         self.update_metrics()
+
+        # -----------------------------------------------------
+        # Update dashboard
+        # -----------------------------------------------------
 
         self.update_gui()
 
@@ -243,7 +416,9 @@ class IoTNetworkSimulator:
                 sensor.get_status()
             )
 
+            # -------------------------------------------------
             # Ignore inactive sensors
+            # -------------------------------------------------
 
             if sensor.get_status() != "ACTIVE":
                 continue
@@ -272,23 +447,48 @@ class IoTNetworkSimulator:
                 reading
             )
 
-            # Record creation timestamp
+            # -------------------------------------------------
+            # Creation timestamp
+            # -------------------------------------------------
 
             packet.set_timestamp(
                 "created"
             )
 
+            # -------------------------------------------------
             # Record generated packet
+            # -------------------------------------------------
 
-            self.metrics.record_packet_generated(
-                packet
-            )
+            self.metrics.record_packet_generated(packet)
+            self._record_link_event(sensor.device_id, self.gateway.device_id, "sent")
+            self._log_packet_event(packet, sensor.device_id, self.gateway.device_id, "SENT")
 
             print(
                 f"{sensor.device_id} generated "
                 f"packet {packet.packet_id}: "
                 f"{reading}"
             )
+
+            # -------------------------------------------------
+            # START SENSOR → GATEWAY ANIMATION
+            # -------------------------------------------------
+
+            if self.dashboard is not None:
+
+                try:
+
+                    self.dashboard.animate_packet(
+                        packet,
+                        sensor.device_id,
+                        self.gateway.device_id
+                    )
+
+                except Exception as error:
+
+                    print(
+                        "Sensor-to-gateway animation error:",
+                        error
+                    )
 
             # -------------------------------------------------
             # Transmission
@@ -310,9 +510,27 @@ class IoTNetworkSimulator:
                     "LOST"
                 )
 
-                self.metrics.record_packet_lost(
-                    packet
-                )
+                self.metrics.record_packet_lost(packet)
+                self._record_link_event(sensor.device_id, self.gateway.device_id, "lost")
+                self._log_packet_event(packet, sensor.device_id, self.gateway.device_id, "LOST")
+                self._log_packet_event(packet, sensor.device_id, self.gateway.device_id, "LOST")
+
+                # Show lost packet on GUI
+                if self.dashboard is not None:
+
+                    try:
+
+                        self.dashboard.update_packet_status(
+                            packet.packet_id,
+                            "lost"
+                        )
+
+                    except Exception as error:
+
+                        print(
+                            "Lost packet animation error:",
+                            error
+                        )
 
                 print(
                     f"Packet {packet.packet_id} "
@@ -329,15 +547,35 @@ class IoTNetworkSimulator:
                 packet
             )
 
+            if received:
+                self._record_link_event(sensor.device_id, self.gateway.device_id, "received")
+                self._log_packet_event(packet, sensor.device_id, self.gateway.device_id, "RECEIVED")
+
             if not received:
 
                 packet.update_status(
                     "LOST"
                 )
 
-                self.metrics.record_packet_lost(
-                    packet
-                )
+                self.metrics.record_packet_lost(packet)
+                self._record_link_event(sensor.device_id, self.gateway.device_id, "lost")
+
+                # Show rejected packet
+                if self.dashboard is not None:
+
+                    try:
+
+                        self.dashboard.update_packet_status(
+                            packet.packet_id,
+                            "lost"
+                        )
+
+                    except Exception as error:
+
+                        print(
+                            "Gateway rejection animation error:",
+                            error
+                        )
 
                 print(
                     f"Packet {packet.packet_id} "
@@ -350,20 +588,25 @@ class IoTNetworkSimulator:
 
     def process_network(self):
 
-        # Save packets currently waiting
-        # in gateway before processing
+        # -----------------------------------------------------
+        # Save packets currently waiting in gateway
+        # -----------------------------------------------------
 
         queued_packets = list(
             self.gateway.packet_queue
         )
 
+        # -----------------------------------------------------
         # Record queue pressure
+        # -----------------------------------------------------
 
         self.metrics.calculate_queue_pressure(
             self.gateway.get_queue_size()
         )
 
+        # -----------------------------------------------------
         # Process gateway queue
+        # -----------------------------------------------------
 
         self.gateway.process_queue()
 
@@ -373,9 +616,30 @@ class IoTNetworkSimulator:
 
         for packet in queued_packets:
 
-            self.metrics.record_packet_forwarded(
-                packet
-            )
+            self.metrics.record_packet_forwarded(packet)
+            self._record_link_event(self.gateway.device_id, self.server.device_id, "forwarded")
+            self._log_packet_event(packet, self.gateway.device_id, self.server.device_id, "FORWARDED")
+
+            # -------------------------------------------------
+            # GATEWAY → SERVER ANIMATION
+            # -------------------------------------------------
+
+            if self.dashboard is not None:
+
+                try:
+
+                    self.dashboard.animate_packet(
+                        packet,
+                        self.gateway.device_id,
+                        self.server.device_id
+                    )
+
+                except Exception as error:
+
+                    print(
+                        "Gateway-to-server animation error:",
+                        error
+                    )
 
         # -----------------------------------------------------
         # Process delivered packets
@@ -392,23 +656,49 @@ class IoTNetworkSimulator:
                 not in self.processed_deliveries
             ):
 
-                # Add delivery timestamp
+                # -------------------------------------------------
+                # Delivery timestamp
+                # -------------------------------------------------
 
                 packet.set_timestamp(
                     "delivered"
                 )
 
+                # -------------------------------------------------
                 # Record delivery
+                # -------------------------------------------------
 
-                self.metrics.record_packet_delivered(
-                    packet
-                )
+                self.metrics.record_packet_delivered(packet)
+                self._record_link_event(self.gateway.device_id, self.server.device_id, "delivered")
+                self._log_packet_event(packet, self.gateway.device_id, self.server.device_id, "DELIVERED")
 
+                # -------------------------------------------------
                 # Mark as processed
+                # -------------------------------------------------
 
                 self.processed_deliveries.add(
                     packet.packet_id
                 )
+
+                # -------------------------------------------------
+                # Update animation
+                # -------------------------------------------------
+
+                if self.dashboard is not None:
+
+                    try:
+
+                        self.dashboard.update_packet_status(
+                            packet.packet_id,
+                            "delivered"
+                        )
+
+                    except Exception as error:
+
+                        print(
+                            "Delivery animation error:",
+                            error
+                        )
 
         # -----------------------------------------------------
         # Console output
@@ -430,11 +720,6 @@ class IoTNetworkSimulator:
 
     def update_metrics(self):
 
-        # Metrics already records individual
-        # packet events.
-
-        # Synchronize simulation time.
-
         self.metrics.simulation_time = (
             self.simulation_time
         )
@@ -450,19 +735,25 @@ class IoTNetworkSimulator:
 
         try:
 
-            summary = self.metrics.get_summary()
+            summary = (
+                self.metrics
+                .get_summary()
+            )
 
-            # Add throughput because the current
-            # Metrics.get_summary() does not include it.
+            # -------------------------------------------------
+            # Throughput
+            # -------------------------------------------------
 
             summary["throughput"] = (
-                self.metrics.calculate_throughput(
+                self.metrics
+                .calculate_throughput(
                     self.simulation_time
                 )
             )
 
-            # Dashboard expects packet loss using
-            # packet_loss_rate / packet_loss.
+            # -------------------------------------------------
+            # Packet loss
+            # -------------------------------------------------
 
             summary["packet_loss_rate"] = (
                 summary.get(
@@ -470,6 +761,10 @@ class IoTNetworkSimulator:
                     0
                 )
             )
+
+            # -------------------------------------------------
+            # Update statistics
+            # -------------------------------------------------
 
             self.dashboard.update_statistics(
                 summary
@@ -501,23 +796,32 @@ class IoTNetworkSimulator:
             speed = float(speed)
 
             if speed <= 0:
-                return
+                speed = 0.1
 
-            # Convert simulation speed into
-            # animation/update delay.
+            self.simulation_speed = speed
 
-            delay = int(
-                100 / speed
-            )
+            # Pass speed to animation as well
+            if self.dashboard is not None:
 
-            if delay <= 0:
-                delay = 1
+                try:
 
-            self.transmission.last_transmission_time = (
-                self.transmission.last_transmission_time
-            )
+                    if self.dashboard.animation is not None:
 
-        except (ValueError, TypeError):
+                        self.dashboard.animation.set_animation_speed(
+                            speed
+                        )
+
+                except Exception as error:
+
+                    print(
+                        "Animation speed error:",
+                        error
+                    )
+
+        except (
+            ValueError,
+            TypeError
+        ):
 
             pass
 
@@ -536,14 +840,25 @@ class IoTNetworkSimulator:
 
 def main():
 
+    # Create simulator
     simulator = IoTNetworkSimulator()
 
-    dashboard = Dashboard(simulator)
+    # Create dashboard
+    dashboard = Dashboard(
+        simulator
+    )
 
+    # Connect dashboard to simulator
     simulator.dashboard = dashboard
 
+    # Start GUI
     dashboard.run()
 
 
+# =============================================================
+# ENTRY POINT
+# =============================================================
+
 if __name__ == "__main__":
+
     main()

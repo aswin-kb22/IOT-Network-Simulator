@@ -2,51 +2,36 @@ import tkinter as tk
 
 
 class PacketAnimation:
-    """
-    Handles packet-flow animation on a Tkinter Canvas.
-
-    The canvas is expected to contain the network topology.
-    Source and destination can be:
-        - dictionaries containing x/y coordinates
-        - objects containing x/y attributes
-        - tuples/lists in the form (x, y)
-    """
 
     def __init__(self, canvas):
-        """
-        Initialize the packet animation manager.
-
-        Parameters:
-            canvas (tk.Canvas): Canvas used for drawing animations.
-        """
         self.canvas = canvas
 
-        # Stores packet_id -> canvas object ID
+        # packet_id -> canvas item
         self.packet_items = {}
 
-        # Stores packet_id -> animation information
+        # packet_id -> animation information
         self.animation_data = {}
 
-        # Animation configuration
-        self.animation_steps = 20
-        self.animation_delay = 30
+        self.animation_speed = 1.0
 
-    # ---------------------------------------------------------
-    # Animate packet
-    # ---------------------------------------------------------
+        # Colors based on packet state
+        self.status_colors = {
+            "created": "#3498db",
+            "queued": "#9b59b6",
+            "transmitting": "#f39c12",
+            "forwarded": "#f39c12",
+            "delivered": "#2ecc71",
+            "received": "#2ecc71",
+            "lost": "#e74c3c",
+            "dropped": "#e74c3c",
+            "failed": "#e74c3c"
+        }
 
-    def animate_packet(self, packet, source, destination):
-        """
-        Animate a packet from source to destination.
+    # =========================================================
+    # ANIMATE PACKET
+    # =========================================================
 
-        Parameters:
-            packet: Packet object containing packet information.
-            source: Source device/coordinate.
-            destination: Destination device/coordinate.
-
-        Returns:
-            int: Canvas object ID of the animated packet.
-        """
+    def animate_packet(self, packet, source, destination, duration=None):
 
         packet_id = self._get_packet_id(packet)
 
@@ -54,313 +39,375 @@ class PacketAnimation:
         destination_position = self._get_position(destination)
 
         if source_position is None or destination_position is None:
-            raise ValueError(
-                "Source and destination must contain valid coordinates."
-            )
+            return
 
-        # Remove an existing animation for the same packet
-        if packet_id in self.packet_items:
-            self.remove_packet(packet_id)
+        # Remove old animation for same packet if necessary
+        self.remove_packet(packet_id)
 
-        start_x, start_y = source_position
+        x1, y1 = source_position
+        x2, y2 = destination_position
 
-        # Draw packet as a small circle
-        packet_item = self.canvas.create_oval(
-            start_x - 6,
-            start_y - 6,
-            start_x + 6,
-            start_y + 6,
-            fill="blue",
+        # Initial packet position
+        radius = 8
+
+        color = self.status_colors["transmitting"]
+
+        item = self.canvas.create_oval(
+            x1 - radius,
+            y1 - radius,
+            x1 + radius,
+            y1 + radius,
+            fill=color,
             outline="black",
-            tags="packet"
+            width=1
         )
 
-        self.packet_items[packet_id] = packet_item
+        # Packet label
+        label = self.canvas.create_text(
+            x1,
+            y1 - 16,
+            text=str(packet_id),
+            fill="black",
+            font=("Arial", 8, "bold")
+        )
 
+        self.packet_items[packet_id] = {
+            "circle": item,
+            "label": label
+        }
+
+        # Store animation information
         self.animation_data[packet_id] = {
             "source": source_position,
             "destination": destination_position,
-            "step": 0
+            "start_time": None,
+            "duration": duration if duration else 1000,
+            "progress": 0.0,
+            "packet": packet,
+            "status": "transmitting"
         }
 
-        # Start animation
         self._move_packet(packet_id)
 
-        return packet_item
-
-    # ---------------------------------------------------------
-    # Internal animation function
-    # ---------------------------------------------------------
+    # =========================================================
+    # MOVE PACKET
+    # =========================================================
 
     def _move_packet(self, packet_id):
-        """
-        Move a packet by one animation step.
-
-        Parameters:
-            packet_id: ID of the packet being animated.
-        """
-
-        if packet_id not in self.packet_items:
-            return
 
         if packet_id not in self.animation_data:
             return
 
+        if packet_id not in self.packet_items:
+            return
+
         data = self.animation_data[packet_id]
 
-        source_x, source_y = data["source"]
-        destination_x, destination_y = data["destination"]
+        source = data["source"]
+        destination = data["destination"]
 
-        step = data["step"]
+        # Increment progress
+        speed = max(0.1, self.animation_speed)
 
-        # Calculate progress from 0 to 1
-        progress = step / self.animation_steps
+        step = 0.025 * speed
 
-        # Calculate current position
-        current_x = (
-            source_x +
-            (destination_x - source_x) * progress
+        data["progress"] += step
+
+        progress = min(
+            data["progress"],
+            1.0
         )
 
-        current_y = (
-            source_y +
-            (destination_y - source_y) * progress
+        x = (
+            source[0]
+            + (destination[0] - source[0]) * progress
         )
 
-        self.update_packet_position(
-            packet_id,
-            (current_x, current_y)
+        y = (
+            source[1]
+            + (destination[1] - source[1]) * progress
+        )
+
+        items = self.packet_items[packet_id]
+
+        circle = items["circle"]
+        label = items["label"]
+
+        radius = 8
+
+        # Move circle
+        self.canvas.coords(
+            circle,
+            x - radius,
+            y - radius,
+            x + radius,
+            y + radius
+        )
+
+        # Move label
+        self.canvas.coords(
+            label,
+            x,
+            y - 16
         )
 
         # Continue animation
-        if step < self.animation_steps:
-
-            data["step"] += 1
+        if progress < 1.0:
 
             self.canvas.after(
-                self.animation_delay,
+                30,
                 lambda: self._move_packet(packet_id)
             )
 
         else:
-            # Packet reached destination
-            self.show_packet_status(
+
+            # Reached destination
+            self.update_packet_position(
                 packet_id,
-                "delivered"
+                destination
             )
 
-    # ---------------------------------------------------------
-    # Update packet position
-    # ---------------------------------------------------------
+            # Do NOT automatically mark delivered.
+            # The simulation decides the actual packet state.
+
+    # =========================================================
+    # UPDATE POSITION
+    # =========================================================
 
     def update_packet_position(self, packet_id, position):
-        """
-        Update the position of an animated packet.
-
-        Parameters:
-            packet_id: Packet identifier.
-            position: Tuple containing (x, y).
-        """
 
         if packet_id not in self.packet_items:
             return
 
         x, y = position
 
-        packet_item = self.packet_items[packet_id]
+        radius = 8
+
+        items = self.packet_items[packet_id]
 
         self.canvas.coords(
-            packet_item,
-            x - 6,
-            y - 6,
-            x + 6,
-            y + 6
+            items["circle"],
+            x - radius,
+            y - radius,
+            x + radius,
+            y + radius
         )
 
-        # Make sure the packet is visible
-        self.canvas.tag_raise(packet_item)
+        self.canvas.coords(
+            items["label"],
+            x,
+            y - 16
+        )
 
-    # ---------------------------------------------------------
-    # Show packet status
-    # ---------------------------------------------------------
+    # =========================================================
+    # SHOW STATUS
+    # =========================================================
 
     def show_packet_status(self, packet_id, status):
-        """
-        Change the visual appearance of a packet according
-        to its current status.
-
-        Parameters:
-            packet_id: Packet identifier.
-            status: Packet status.
-        """
 
         if packet_id not in self.packet_items:
             return
 
-        packet_item = self.packet_items[packet_id]
+        status = status.lower()
 
-        status = str(status).lower()
+        color = self.status_colors.get(
+            status,
+            "#3498db"
+        )
 
-        if status in ("created", "pending"):
-            color = "blue"
-
-        elif status in ("transmitting", "forwarded"):
-            color = "orange"
-
-        elif status in ("delivered", "received", "success"):
-            color = "green"
-
-        elif status in ("lost", "dropped", "failed"):
-            color = "red"
-
-        else:
-            color = "gray"
+        circle = self.packet_items[packet_id]["circle"]
 
         self.canvas.itemconfig(
-            packet_item,
+            circle,
             fill=color
         )
 
-    # ---------------------------------------------------------
-    # Remove packet
-    # ---------------------------------------------------------
+        if packet_id in self.animation_data:
+
+            self.animation_data[
+                packet_id
+            ]["status"] = status
+
+        # Lost packets
+        if status in (
+            "lost",
+            "dropped",
+            "failed"
+        ):
+
+            self._show_lost_packet(
+                packet_id
+            )
+
+        # Delivered packets
+        elif status in (
+            "delivered",
+            "received"
+        ):
+
+            self.canvas.itemconfig(
+                circle,
+                fill="#2ecc71"
+            )
+
+            self.canvas.after(
+                500,
+                lambda: self.remove_packet(packet_id)
+            )
+
+    # =========================================================
+    # LOST PACKET EFFECT
+    # =========================================================
+
+    def _show_lost_packet(self, packet_id):
+
+        if packet_id not in self.packet_items:
+            return
+
+        items = self.packet_items[packet_id]
+
+        circle = items["circle"]
+
+        self.canvas.itemconfig(
+            circle,
+            fill="#e74c3c",
+            outline="#8b0000",
+            width=2
+        )
+
+        # Make packet disappear after short delay
+        self.canvas.after(
+            700,
+            lambda: self.remove_packet(packet_id)
+        )
+
+    # =========================================================
+    # REMOVE PACKET
+    # =========================================================
 
     def remove_packet(self, packet_id):
-        """
-        Remove a packet from the canvas.
-
-        Parameters:
-            packet_id: Packet identifier.
-        """
 
         if packet_id in self.packet_items:
 
-            packet_item = self.packet_items[packet_id]
+            items = self.packet_items[packet_id]
 
-            self.canvas.delete(packet_item)
+            try:
+                self.canvas.delete(
+                    items["circle"]
+                )
+
+                self.canvas.delete(
+                    items["label"]
+                )
+
+            except tk.TclError:
+                pass
 
             del self.packet_items[packet_id]
 
         if packet_id in self.animation_data:
             del self.animation_data[packet_id]
 
-    # ---------------------------------------------------------
-    # Clear all animations
-    # ---------------------------------------------------------
+    # =========================================================
+    # CLEAR ALL
+    # =========================================================
 
     def clear_animations(self):
-        """
-        Remove all currently animated packets.
-        """
 
-        for packet_item in self.packet_items.values():
-            self.canvas.delete(packet_item)
+        for packet_id in list(
+            self.packet_items.keys()
+        ):
+
+            self.remove_packet(
+                packet_id
+            )
 
         self.packet_items.clear()
         self.animation_data.clear()
 
-    # ---------------------------------------------------------
-    # Helper: get packet ID
-    # ---------------------------------------------------------
+    # =========================================================
+    # SPEED
+    # =========================================================
+
+    def set_animation_speed(self, speed):
+
+        try:
+
+            speed = float(speed)
+
+            if speed <= 0:
+                speed = 0.1
+
+            self.animation_speed = speed
+
+        except (
+            ValueError,
+            TypeError
+        ):
+
+            pass
+
+    # =========================================================
+    # ACTIVE PACKETS
+    # =========================================================
+
+    def get_active_packet_count(self):
+
+        return len(
+            self.packet_items
+        )
+
+    # =========================================================
+    # PACKET ID
+    # =========================================================
 
     def _get_packet_id(self, packet):
-        """
-        Extract packet ID from a Packet object or dictionary.
-        """
-
-        if isinstance(packet, dict):
-
-            if "packet_id" in packet:
-                return packet["packet_id"]
-
-            if "id" in packet:
-                return packet["id"]
 
         if hasattr(packet, "packet_id"):
             return packet.packet_id
 
-        if hasattr(packet, "id"):
-            return packet.id
+        if isinstance(packet, dict):
+            return packet.get(
+                "packet_id",
+                "unknown"
+            )
 
-        raise ValueError(
-            "Packet must contain packet_id or id."
-        )
+        return str(packet)
 
-    # ---------------------------------------------------------
-    # Helper: get coordinates
-    # ---------------------------------------------------------
+    # =========================================================
+    # POSITION
+    # =========================================================
 
-    def _get_position(self, device):
-        """
-        Extract x/y coordinates from a device.
+    def _get_position(self, node):
 
-        Supported formats:
-
-            (x, y)
-
-            {"x": x, "y": y}
-
-            object.x and object.y
-        """
+        if node is None:
+            return None
 
         # Tuple/list
-        if isinstance(device, (tuple, list)):
+        if isinstance(node, (tuple, list)):
 
-            if len(device) >= 2:
+            if len(node) >= 2:
                 return (
-                    device[0],
-                    device[1]
+                    float(node[0]),
+                    float(node[1])
                 )
 
         # Dictionary
-        if isinstance(device, dict):
+        if isinstance(node, dict):
 
-            if "x" in device and "y" in device:
+            if "x" in node and "y" in node:
+
                 return (
-                    device["x"],
-                    device["y"]
+                    float(node["x"]),
+                    float(node["y"])
                 )
 
-        # Object attributes
-        if hasattr(device, "x") and hasattr(device, "y"):
+        # Object with x/y
+        if hasattr(node, "x") and hasattr(node, "y"):
 
             return (
-                device.x,
-                device.y
+                float(node.x),
+                float(node.y)
             )
 
         return None
-
-    # ---------------------------------------------------------
-    # Change animation speed
-    # ---------------------------------------------------------
-
-    def set_animation_speed(self, delay):
-        """
-        Change animation speed.
-
-        Parameters:
-            delay (int): Delay between animation frames in
-                         milliseconds.
-        """
-
-        if delay <= 0:
-            raise ValueError(
-                "Animation delay must be greater than zero."
-            )
-
-        self.animation_delay = delay
-
-    # ---------------------------------------------------------
-    # Get active packet count
-    # ---------------------------------------------------------
-
-    def get_active_packet_count(self):
-        """
-        Return the number of packets currently being animated.
-
-        Returns:
-            int: Number of active packet animations.
-        """
-
-        return len(self.packet_items)

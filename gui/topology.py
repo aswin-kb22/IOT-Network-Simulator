@@ -46,6 +46,12 @@ class Topology:
         # }
         self.connections = {}
 
+        # Per-link counters and canvas labels.
+        # Each connection tracks attempts, successful reception, forwarding/delivery,
+        # and losses independently.
+        self.connection_stats = {}
+        self.connection_labels = {}
+
         # Default node positions.
         self.sensor_start_x = 120
         self.sensor_start_y = 120
@@ -311,7 +317,88 @@ class Topology:
 
         self.connections[connection_key] = line
 
+        self.connection_stats[connection_key] = {
+            "sent": 0,
+            "received": 0,
+            "forwarded": 0,
+            "delivered": 0,
+            "lost": 0,
+        }
+
+        # Keep sensor-link labels closer to each sensor so labels from
+        # converging links do not overlap near the gateway. Keep the
+        # gateway-server label centered above its horizontal link.
+        source_type = source_node.get("type")
+        destination_type = destination_node.get("type")
+        if destination_type == "gateway":
+            position = 0.25
+            label_width = 112
+            offset_x, offset_y = 0, -24
+        else:
+            position = 0.50
+            label_width = 150
+            offset_x, offset_y = 0, -28
+
+        label_x = source_node["x"] + (destination_node["x"] - source_node["x"]) * position
+        label_y = source_node["y"] + (destination_node["y"] - source_node["y"]) * position
+        label = self.canvas.create_text(
+            label_x + offset_x,
+            label_y + offset_y,
+            text=self._format_connection_stats(connection_key),
+            fill="#222222",
+            font=("Arial", 8),
+            justify="center",
+            width=label_width,
+            tags=("connection_counter",),
+        )
+        self.connection_labels[connection_key] = label
+        self.canvas.tag_raise(label)
+
         return connection_key
+
+    # =========================================================
+    # CONNECTION COUNTERS
+    # =========================================================
+
+    def record_connection_event(self, source, destination, event, count=1):
+        """Increment a counter for a specific directed link and refresh its label.
+
+        event can be: sent, received, forwarded, delivered, or lost.
+        """
+        key = (self._get_device_id(source), self._get_device_id(destination))
+        if key not in self.connection_stats:
+            return False
+
+        event = str(event).lower()
+        if event not in {"sent", "received", "forwarded", "delivered", "lost"}:
+            raise ValueError(f"Unsupported connection event: {event}")
+
+        self.connection_stats[key][event] += int(count)
+        label = self.connection_labels.get(key)
+        if label is not None:
+            self.canvas.itemconfig(label, text=self._format_connection_stats(key))
+            self.canvas.tag_raise(label)
+        return True
+
+    def get_connection_stats(self, source, destination):
+        """Return a copy of the counters for a directed connection."""
+        key = (self._get_device_id(source), self._get_device_id(destination))
+        stats = self.connection_stats.get(key)
+        return stats.copy() if stats is not None else None
+
+    def _format_connection_stats(self, key):
+        stats = self.connection_stats.get(key, {})
+        source, destination = key
+        if self.nodes.get(destination, {}).get("type") == "gateway":
+            return (
+                f"Sent: {stats.get('sent', 0)}  Received: {stats.get('received', 0)}"
+                f"\nLost: {stats.get('lost', 0)}"
+            )
+        return (
+            f"Forwarded: {stats.get('forwarded', 0)}"
+            f"  Delivered: {stats.get('delivered', 0)}"
+            f"\nLost: {stats.get('lost', 0)}"
+        )
 
     # =========================================================
     # REMOVE NODE
@@ -364,6 +451,10 @@ class Topology:
             ]
 
             self.canvas.delete(line)
+            label = self.connection_labels.pop(connection, None)
+            if label is not None:
+                self.canvas.delete(label)
+            self.connection_stats.pop(connection, None)
 
             del self.connections[
                 connection
@@ -464,10 +555,13 @@ class Topology:
         self.canvas.delete("server_label")
 
         self.canvas.delete("connection")
+        self.canvas.delete("connection_counter")
 
         # Clear internal data.
         self.nodes.clear()
         self.connections.clear()
+        self.connection_stats.clear()
+        self.connection_labels.clear()
 
         self.sensor_count = 0
 
